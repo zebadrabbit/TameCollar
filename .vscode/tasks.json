@@ -1,0 +1,26 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "PlatformIO: Build (sparkfun_promicro8)",
+      "type": "shell",
+      "command": "pio",
+      "args": ["run", "-e", "sparkfun_promicro8"],
+      "problemMatcher": []
+    },
+    {
+      "label": "PlatformIO: Upload (sparkfun_promicro8)",
+      "type": "shell",
+      "command": "pio",
+      "args": ["run", "-t", "upload", "-e", "sparkfun_promicro8"],
+      "problemMatcher": []
+    },
+    {
+      "label": "PlatformIO: Monitor (9600)",
+      "type": "shell",
+      "command": "pio",
+      "args": ["device", "monitor", "-b", "9600"],
+      "problemMatcher": []
+    }
+  ]
+}

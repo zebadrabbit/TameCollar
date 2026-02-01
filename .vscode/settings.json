@@ -1,0 +1,6 @@
+{
+  "platformio-ide.useBuiltinPIOCore": true,
+  "platformio-ide.autoPreloadEnvTasks": true,
+  "files.eol": "\n",
+  "editor.formatOnSave": false
+}
