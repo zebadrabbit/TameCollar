@@ -9,6 +9,14 @@ namespace Config {
 // Serial
 static constexpr uint32_t SerialBaud = 9600;
 
+// Serial logging
+// Startup wait is useful on native-USB boards (like ATmega32U4) so the host can
+// open the port and not miss the banner. Set to 0 to avoid waiting.
+static constexpr uint16_t SerialStartupWaitMs = 300;
+
+// Optional heartbeat log interval. Set to 0 to disable.
+static constexpr uint32_t SerialHeartbeatMs = 0;
+
 // Remote control input pins
 static constexpr uint8_t RemotePin1 = 7;
 static constexpr uint8_t RemotePin2 = 6;
@@ -108,6 +116,71 @@ static constexpr uint8_t ColorWhiteB = 255;
 
 } // namespace Config
 
+namespace Log {
+
+enum class Level : uint8_t {
+  Error = 0,
+  Warn = 1,
+  Info = 2,
+  Debug = 3,
+};
+
+static constexpr Level MinLevel = Level::Info;
+
+static bool isEnabled(Level level) {
+  return static_cast<uint8_t>(level) <= static_cast<uint8_t>(MinLevel);
+}
+
+static void printPrefix(Level level) {
+  Serial.print('[');
+  Serial.print(millis());
+  Serial.print(F("ms] "));
+
+  switch (level) {
+    case Level::Error:
+      Serial.print(F("[E] "));
+      break;
+    case Level::Warn:
+      Serial.print(F("[W] "));
+      break;
+    case Level::Info:
+      Serial.print(F("[I] "));
+      break;
+    case Level::Debug:
+    default:
+      Serial.print(F("[D] "));
+      break;
+  }
+}
+
+static void line(Level level, const __FlashStringHelper *msg) {
+  if (!isEnabled(level)) {
+    return;
+  }
+  printPrefix(level);
+  Serial.println(msg);
+}
+
+static void line(Level level, const char *msg) {
+  if (!isEnabled(level)) {
+    return;
+  }
+  printPrefix(level);
+  Serial.println(msg);
+}
+
+static void keyValue(Level level, const __FlashStringHelper *key, uint32_t value) {
+  if (!isEnabled(level)) {
+    return;
+  }
+  printPrefix(level);
+  Serial.print(key);
+  Serial.print(F(": "));
+  Serial.println(value);
+}
+
+} // namespace Log
+
 
 // Remote control input pins
 static constexpr uint8_t REMOTE_PIN_1 = Config::RemotePin1;
@@ -125,6 +198,8 @@ static bool remoteStatesInitialized = false;
 static uint8_t remotePressEvents = 0;
 
 static void printRemotePinState(uint8_t index, bool isHigh) {
+  Log::printPrefix(Log::Level::Info);
+  Serial.print(F("RADIO: "));
   Serial.print(REMOTE_PIN_NAMES[index]);
   Serial.print(F(" (pin "));
   Serial.print(REMOTE_PINS[index]);
@@ -698,30 +773,66 @@ private:
 
 static LedRingController ring(strip);
 
-static void printMode(LedMode m) {
+static const __FlashStringHelper *modeName(LedMode m) {
   switch (m) {
     case LedMode::Idle:
-      Serial.println(F("Mode 1: Idle"));
-      break;
+      return F("Idle");
     case LedMode::Peace:
-      Serial.println(F("Mode 2: Peace"));
-      break;
+      return F("Peace");
     case LedMode::Warning:
-      Serial.println(F("Mode 3: Warning"));
-      break;
+      return F("Warning");
     case LedMode::Danger:
-      Serial.println(F("Mode 4: Danger"));
-      break;
+      return F("Danger");
     case LedMode::SolidGreen:
-      Serial.println(F("Solid: Green"));
-      break;
+      return F("SolidGreen");
     case LedMode::SolidYellow:
-      Serial.println(F("Solid: Yellow"));
-      break;
+      return F("SolidYellow");
     case LedMode::SolidRed:
-      Serial.println(F("Solid: Red"));
-      break;
+      return F("SolidRed");
+    default:
+      return F("Unknown");
   }
+}
+
+static void printSerialHelp() {
+  Log::line(Log::Level::Info, F("Serial commands:"));
+  Log::line(Log::Level::Info, F("  1 = Idle"));
+  Log::line(Log::Level::Info, F("  2 = Peace"));
+  Log::line(Log::Level::Info, F("  3 = Warning"));
+  Log::line(Log::Level::Info, F("  4 = Danger"));
+  Log::line(Log::Level::Info, F("  h or ? = this help"));
+}
+
+static void printStartupBanner() {
+  Log::line(Log::Level::Info, F("TameCollar firmware boot"));
+  Log::line(Log::Level::Info, F("Source: https://github.com/zebadrabbit/TameCollar"));
+  Log::keyValue(Log::Level::Info, F("Serial baud"), Config::SerialBaud);
+
+  Log::line(Log::Level::Info, F("What you'll see in Serial output:"));
+  Log::line(Log::Level::Info, F("  - Boot banner + pin/config summary"));
+  Log::line(Log::Level::Info, F("  - RADIO: remote input transitions (HIGH/LOW)"));
+  Log::line(Log::Level::Info, F("  - MODE: changes (via remote or serial)"));
+  if (Config::SerialHeartbeatMs != 0) {
+    Log::line(Log::Level::Info, F("  - HEARTBEAT: periodic status line"));
+  }
+
+  Log::line(Log::Level::Info, F("Hardware defaults:"));
+  Log::printPrefix(Log::Level::Info);
+  Serial.print(F("  NeoPixel pin="));
+  Serial.print(NEOPIXEL_PIN);
+  Serial.print(F(", pixels="));
+  Serial.print(PIXEL_COUNT);
+  Serial.print(F(", brightness="));
+  Serial.println(STRIP_BRIGHTNESS);
+
+  Log::line(Log::Level::Info, F("Remote inputs use INPUT_PULLUP (pressed = LOW)."));
+  printSerialHelp();
+}
+
+static void printMode(LedMode m) {
+  Log::printPrefix(Log::Level::Info);
+  Serial.print(F("MODE: "));
+  Serial.println(modeName(m));
 }
 
 static void pollSerialForModeChange() {
@@ -730,6 +841,11 @@ static void pollSerialForModeChange() {
   }
 
   const char c = (char)Serial.read();
+  if (c == 'h' || c == 'H' || c == '?') {
+    printSerialHelp();
+    return;
+  }
+
   if (c == '1') {
     ring.setMode(LedMode::Idle);
     printMode(LedMode::Idle);
@@ -742,6 +858,11 @@ static void pollSerialForModeChange() {
   } else if (c == '4') {
     ring.setMode(LedMode::Danger);
     printMode(LedMode::Danger);
+  } else if (c != '\n' && c != '\r') {
+    Log::printPrefix(Log::Level::Warn);
+    Serial.print(F("Unknown command: '"));
+    Serial.print(c);
+    Serial.println(F("' (send 'h' for help)"));
   }
 }
 
@@ -810,19 +931,49 @@ static LedMode modeStepDownSolidForRemote(LedMode m) {
 
 void setup() {  
   Serial.begin(Config::SerialBaud);
+
+#if defined(USBCON)
+  if (Config::SerialStartupWaitMs != 0) {
+    const uint32_t startMs = millis();
+    while (!Serial && (millis() - startMs < Config::SerialStartupWaitMs)) {
+      delay(5);
+    }
+  }
+#endif
+
   initRemotePins();
   ring.begin();
   ring.setMode(LedMode::Idle);
-  Serial.println(F("LED ring ready. Send 1/2/3/4 over Serial to change modes."));
+
+  printStartupBanner();
+  printMode(LedMode::Idle);
 }
 
 void loop() {
   pollSerialForModeChange();
   pollRemotePinsForChanges();
 
+  if (Config::SerialHeartbeatMs != 0) {
+    static uint32_t lastHeartbeatMs = 0;
+    const uint32_t nowMs = millis();
+    if (nowMs - lastHeartbeatMs >= Config::SerialHeartbeatMs) {
+      lastHeartbeatMs = nowMs;
+      Log::printPrefix(Log::Level::Info);
+      Serial.print(F("HEARTBEAT: mode="));
+      Serial.println(modeName(ring.mode()));
+    }
+  }
+
   const uint8_t events = remotePressEvents;
   if (events != 0) {
     remotePressEvents = 0;
+
+    Log::printPrefix(Log::Level::Info);
+    Serial.print(F("RADIO: press events mask=0b"));
+    for (int8_t i = (int8_t)REMOTE_PIN_COUNT - 1; i >= 0; i--) {
+      Serial.print((events & (1u << i)) ? '1' : '0');
+    }
+    Serial.println();
 
     // Solid color modes
     if (events & (1u << Config::RemoteIndexSolidUp)) {
